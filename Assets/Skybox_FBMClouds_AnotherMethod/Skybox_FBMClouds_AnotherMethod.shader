@@ -5,7 +5,6 @@ Shader "Skybox/FBMClouds"
 {
 	Properties 
 	{
-		_MainTex("Main texture", 2D) = "white" {}
 		_Speed("Speed", Range(0,10)) = 1.0
 		_Density("Density", Range(-100,100)) = 1.0
 		_Border("Border", Range(0, 0.5)) = 0.1
@@ -13,19 +12,19 @@ Shader "Skybox/FBMClouds"
 		_ProjectionMode("Proj (1-ort 2-ster 3-eq 4-gnom)", Range(1, 4)) = 1
 
 		_ColorSky("Sky color", Color) = (0, 0, 1, 1)
-		_SkyExponent("Sky exponent", Range(0, 10)) = 8.5
-		_ColorHorizon("Horizon color", Color) = (1, 1, 1, 1)
+		_ColorHorizon("Horizon fog color", Color) = (1, 1, 1, 1)
+		_SkyExponent("Horizon fog : size on sky", Range(0, 10)) = 8.5
+		_CloudsExponent("Horizon fog : size on FBM", Range(1, 10)) = 3
+
 		_Color1("Color A", Color) = (0.101961, 0.619608, 0.666667, 1)
 		_Color2("Color B", Color) = (0.666667, 0.666667, 0.498039, 1)
 		_Color3("Color C", Color) = (0 ,0, 0.164706, 1)
 		_Color4("Color D", Color) = (0.666667, 1, 1, 1)
-		_CloudsExponent("Clouds exponent", Range(1, 10)) = 3
 	}
 
 	CGINCLUDE
 	#include "UnityCG.cginc"
 
-	sampler2D _MainTex;
 	float _Speed;
 	float _Density;
 	float _Border;
@@ -113,7 +112,8 @@ Shader "Skybox/FBMClouds"
 			- _WorldSpaceCameraPos;
 		output.pos = UnityObjectToClipPos(input.vertex);
 
-		output.uv = float4(input.texcoord.xy, 0, 0);
+		output.uv = normalize(mul(unity_ObjectToWorld, input.vertex));
+
 		return output;
 	}
 
@@ -122,6 +122,8 @@ Shader "Skybox/FBMClouds"
 	{
 		float sphereX = input.uv.x;
 		float sphereZ = input.uv.y;
+
+		float4 returnValue = float4(1, 1, 1, 1);
 
 		float sphereY = sqrt(1.0 - pow(sphereX, 2.0) - pow(sphereZ, 2.0));
 
@@ -149,12 +151,10 @@ Shader "Skybox/FBMClouds"
 			uvY = sphereY / sphereZ;
 		}
 
-
-		//float2 st = input.uv.xy *_Density;
 		float2 st = float2(uvX, uvY) * _Density;
 		st += st * abs(sin(_Time*0.1)*0.1);
 
-		float3 color = float3(0, 0, 0);
+		float3 color = float3(0.8, 0.8, 0.8);
 
 		float2 q = float2(0, 0);
 		q.x = fbm(st + 0.0f* _Time * _Speed);
@@ -178,16 +178,8 @@ Shader "Skybox/FBMClouds"
 			_Color4.xyz,
 			clamp(length(r.x), 0.0, 1.0));
 
-		// UV Debug
-		/*
-		if ((uvY < _TestUV + _Border && uvY > _TestUV - _Border)
-			|| (uvX < _TestUV + _Border && uvX > _TestUV - _Border))
-			return float4(1, 1, 1, 1);
-		else
-			return float4((input.uv.x* 0.5) +1, (input.uv.y * 0.5) + 1, 0, 1);
-			*/
 
-
+		// Lerp en y (ciel - horizon -brouillard)
 		float p = input.uv.y;
 		float p1 = 1 - pow(min(1, 1 - p), _SkyExponent);
 		float p3 = 1 - pow(min(1, 1 + p), _CloudsExponent);
@@ -195,13 +187,22 @@ Shader "Skybox/FBMClouds"
 
 		half3 c_sky = _ColorSky * p1 + _ColorHorizon * p2 + half3((f*f*f + 0.6*f*f + 0.5*f)*color) * p3;
 
-		
-		if ((uvY < _TestUV + _Border && uvY > _TestUV - _Border)
-			|| (uvX < _TestUV + _Border && uvX > _TestUV - _Border))
-			return float4(1, 1, 1, 1);
-		else
-			return half4(c_sky, 1);
-			
+		if (c_sky.y > 0.1)
+			returnValue.y = c_sky.y;
+		returnValue.xz = c_sky.xz;
+
+
+
+		//DebugUV
+		//if ((uvY < _TestUV + _Border && uvY > _TestUV - _Border)
+		//	|| (uvX < _TestUV + _Border && uvX > _TestUV - _Border))
+		//	returnValue = float4(1, 1, 1, 1);
+
+
+		// Suppression des artefacts
+
+
+		return returnValue;
 	}
 
 	ENDCG
